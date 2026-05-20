@@ -13,14 +13,10 @@ const projectSchema = z.object({
   status: z.enum(['ACTIVE', 'COMPLETED', 'ON_HOLD']).optional(),
 });
 
-function canAccessProject(project, user) {
-  return user.role === 'ADMIN' && project.createdById === user.userId;
-}
-
+// CREATE PROJECT
 router.post('/', verifyToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
     const data = projectSchema.parse(req.body);
-
     const project = await prisma.project.create({
       data: {
         name: data.name,
@@ -31,44 +27,27 @@ router.post('/', verifyToken, authorizeRoles('ADMIN'), async (req, res) => {
         createdById: req.user.userId,
       },
       include: {
-        members: {
-          include: {
-            user: {
-              select: { id: true, name: true, email: true, role: true },
-            },
-          },
-        },
+        members: { include: { user: { select: { id: true, name: true, email: true, role: true } } } },
       },
     });
-
     res.status(201).json(project);
   } catch (error) {
-    if (error.name === 'ZodError') {
-      return res.status(400).json({ error: error.errors[0].message });
-    }
+    if (error.name === 'ZodError') return res.status(400).json({ error: error.errors[0].message });
     console.error(error);
     res.status(500).json({ error: 'Failed to create project' });
   }
 });
 
+// GET ALL PROJECTS
 router.get('/', verifyToken, async (req, res) => {
   try {
     const projects = await prisma.project.findMany({
       include: {
-        members: {
-          include: {
-            user: {
-              select: { id: true, name: true, email: true, role: true },
-            },
-          },
-        },
-        tasks: {
-          select: { id: true, status: true },
-        },
+        members: { include: { user: { select: { id: true, name: true, email: true, role: true } } } },
+        tasks: { select: { id: true, status: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
-
     res.json(projects);
   } catch (error) {
     console.error(error);
@@ -76,33 +55,17 @@ router.get('/', verifyToken, async (req, res) => {
   }
 });
 
+// GET SINGLE PROJECT
 router.get('/:id', verifyToken, async (req, res) => {
   try {
-    const projectId = Number(req.params.id);
-    if (Number.isNaN(projectId)) {
-      return res.status(400).json({ error: 'Invalid project id' });
-    }
-
     const project = await prisma.project.findUnique({
-      where: { id: projectId },
+      where: { id: req.params.id },
       include: {
-        members: {
-          include: {
-            user: {
-              select: { id: true, name: true, email: true, role: true },
-            },
-          },
-        },
+        members: { include: { user: { select: { id: true, name: true, email: true, role: true } } } },
         tasks: true,
       },
     });
-
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    // Allow any authenticated user to view project details
-
+    if (!project) return res.status(404).json({ error: 'Project not found' });
     res.json(project);
   } catch (error) {
     console.error(error);
@@ -110,25 +73,16 @@ router.get('/:id', verifyToken, async (req, res) => {
   }
 });
 
+// UPDATE PROJECT
 router.put('/:id', verifyToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
-    const projectId = Number(req.params.id);
     const data = projectSchema.parse(req.body);
-
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-    });
-
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    if (project.createdById !== req.user.userId) {
-      return res.status(403).json({ error: 'You can only edit projects you created' });
-    }
+    const project = await prisma.project.findUnique({ where: { id: req.params.id } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    if (project.createdById !== req.user.userId) return res.status(403).json({ error: 'You can only edit projects you created' });
 
     const updated = await prisma.project.update({
-      where: { id: projectId },
+      where: { id: req.params.id },
       data: {
         name: data.name,
         description: data.description || '',
@@ -137,39 +91,26 @@ router.put('/:id', verifyToken, authorizeRoles('ADMIN'), async (req, res) => {
         status: data.status || project.status,
       },
     });
-
     res.json(updated);
   } catch (error) {
-    if (error.name === 'ZodError') {
-      return res.status(400).json({ error: error.errors[0].message });
-    }
+    if (error.name === 'ZodError') return res.status(400).json({ error: error.errors[0].message });
     console.error(error);
     res.status(500).json({ error: 'Failed to update project' });
   }
 });
 
+// DELETE PROJECT
 router.delete('/:id', verifyToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
-    const projectId = Number(req.params.id);
-
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-    });
-
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    if (project.createdById !== req.user.userId) {
-      return res.status(403).json({ error: 'You can only delete projects you created' });
-    }
+    const project = await prisma.project.findUnique({ where: { id: req.params.id } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    if (project.createdById !== req.user.userId) return res.status(403).json({ error: 'You can only delete projects you created' });
 
     await prisma.$transaction([
-      prisma.task.deleteMany({ where: { projectId } }),
-      prisma.projectMember.deleteMany({ where: { projectId } }),
-      prisma.project.delete({ where: { id: projectId } }),
+      prisma.task.deleteMany({ where: { projectId: req.params.id } }),
+      prisma.projectMember.deleteMany({ where: { projectId: req.params.id } }),
+      prisma.project.delete({ where: { id: req.params.id } }),
     ]);
-
     res.json({ message: 'Project deleted successfully' });
   } catch (error) {
     console.error(error);
@@ -177,46 +118,25 @@ router.delete('/:id', verifyToken, authorizeRoles('ADMIN'), async (req, res) => 
   }
 });
 
+// ADD MEMBER
 router.post('/:id/members', verifyToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
-    const projectId = Number(req.params.id);
-    const userId = Number(req.body.userId);
+    const project = await prisma.project.findUnique({ where: { id: req.params.id } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    if (project.createdById !== req.user.userId) return res.status(403).json({ error: 'You can only manage your own projects' });
 
-    if (Number.isNaN(projectId) || Number.isNaN(userId)) {
-      return res.status(400).json({ error: 'Invalid project or user id' });
-    }
+    const user = await prisma.user.findUnique({ where: { id: req.body.userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const project = await prisma.project.findUnique({ where: { id: projectId } });
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    if (project.createdById !== req.user.userId) {
-      return res.status(403).json({ error: 'You can only manage your own projects' });
-    }
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const existing = await prisma.projectMember.findFirst({
-      where: { projectId, userId },
+    const existing = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: req.params.id, userId: req.body.userId } },
     });
-
-    if (existing) {
-      return res.status(400).json({ error: 'User is already a member' });
-    }
+    if (existing) return res.status(400).json({ error: 'User is already a member' });
 
     const member = await prisma.projectMember.create({
-      data: { projectId, userId },
-      include: {
-        user: {
-          select: { id: true, name: true, email: true, role: true },
-        },
-      },
+      data: { projectId: req.params.id, userId: req.body.userId },
+      include: { user: { select: { id: true, name: true, email: true, role: true } } },
     });
-
     res.status(201).json(member);
   } catch (error) {
     console.error(error);
@@ -224,24 +144,16 @@ router.post('/:id/members', verifyToken, authorizeRoles('ADMIN'), async (req, re
   }
 });
 
+// REMOVE MEMBER
 router.delete('/:id/members/:userId', verifyToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
-    const projectId = Number(req.params.id);
-    const userId = Number(req.params.userId);
-
-    const project = await prisma.project.findUnique({ where: { id: projectId } });
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    if (project.createdById !== req.user.userId) {
-      return res.status(403).json({ error: 'You can only manage your own projects' });
-    }
+    const project = await prisma.project.findUnique({ where: { id: req.params.id } });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    if (project.createdById !== req.user.userId) return res.status(403).json({ error: 'You can only manage your own projects' });
 
     await prisma.projectMember.deleteMany({
-      where: { projectId, userId },
+      where: { projectId: req.params.id, userId: req.params.userId },
     });
-
     res.json({ message: 'Member removed' });
   } catch (error) {
     console.error(error);
@@ -249,34 +161,14 @@ router.delete('/:id/members/:userId', verifyToken, authorizeRoles('ADMIN'), asyn
   }
 });
 
+// GET MEMBERS
 router.get('/:id/members', verifyToken, async (req, res) => {
   try {
-    const projectId = Number(req.params.id);
-
     const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      include: {
-        members: {
-          include: {
-            user: {
-              select: { id: true, name: true, email: true, role: true },
-            },
-          },
-        },
-      },
+      where: { id: req.params.id },
+      include: { members: { include: { user: { select: { id: true, name: true, email: true, role: true } } } } },
     });
-
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    const isOwner = project.createdById === req.user.userId;
-    const isMember = project.members.some((m) => m.userId === req.user.userId);
-
-    if (!isOwner && !isMember && req.user.role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-
+    if (!project) return res.status(404).json({ error: 'Project not found' });
     res.json(project.members.map((m) => m.user));
   } catch (error) {
     console.error(error);
