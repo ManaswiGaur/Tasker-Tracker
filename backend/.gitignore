@@ -6,5 +6,5 @@ node_modules
 prisma/dev.db
 prisma/migrations/
 
-# Platform-specific Prisma engine binaries
-src/generated/prisma/*.node
+# Generated Prisma client
+src/generated/
