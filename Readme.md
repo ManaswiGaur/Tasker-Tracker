@@ -2,7 +2,7 @@
 
 TaskerTrack is a team-focused workspace and assignment manager with role-based access control, Google sign-in, and a polished React + Tailwind frontend backed by an Express + Prisma API.
 
-Demo (placeholder): https://your-deployed-link.example.com
+Demo (placeholder): [https://your-deployed-link.example.com](https://thorough-joy-production-a4e9.up.railway.app/)
 
 ---
 
